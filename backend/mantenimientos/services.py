@@ -71,6 +71,28 @@ def _imagen_a_base64(field):
     return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
 
 
+def _imagen_a_path(field):
+    """Devuelve la ruta absoluta de un ImageField/FileField (o None si no existe)."""
+    if not field:
+        return None
+    full_path = os.path.join(settings.MEDIA_ROOT, field.name)
+    return full_path if os.path.exists(full_path) else None
+
+
+def _pdf_link_callback(uri, rel):
+    """Resuelve rutas de archivos locales para que xhtml2pdf las incruste.
+
+    Usamos rutas absolutas en vez de data-URIs base64 porque xhtml2pdf tiene
+    un bug con múltiples imágenes en base64 que causa el error
+    'sequence item 0: expected str instance, list found'.
+    """
+    # Las plantillas pasan rutas absolutas del filesystem directamente.
+    if uri and os.path.isabs(uri) and os.path.exists(uri):
+        return uri
+    # Si es un data URI (marca de agua, etc.) xhtml2pdf lo maneja internamente.
+    return uri
+
+
 def generar_pdf_mantenimiento(mantenimiento):
     """
     Genera el PDF oficial del mantenimiento, lo guarda localmente
@@ -84,7 +106,10 @@ def generar_pdf_mantenimiento(mantenimiento):
         evidencias.append({
             'tipo_display': ev.get_tipo_display(),
             'descripcion': ev.descripcion,
-            'imagen_b64': _imagen_a_base64(ev.imagen),
+            # Ruta absoluta en disco — xhtml2pdf la resuelve vía link_callback.
+            # NO usar base64 aquí: con 2+ imágenes dispara un bug de xhtml2pdf
+            # ('sequence item 0: expected str instance, list found').
+            'imagen_path': _imagen_a_path(ev.imagen),
         })
 
     # Checklist completo: todos los items activos + respuesta (si la hay).
@@ -116,7 +141,7 @@ def generar_pdf_mantenimiento(mantenimiento):
 
     html_string = render_to_string('pdf/mantenimiento.html', context)
     buffer = BytesIO()
-    status = pisa.CreatePDF(html_string, dest=buffer)
+    status = pisa.CreatePDF(html_string, dest=buffer, link_callback=_pdf_link_callback)
 
     if status.err:
         raise Exception('Error al generar el PDF del mantenimiento.')

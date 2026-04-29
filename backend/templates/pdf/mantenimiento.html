@@ -49,7 +49,7 @@
     .evidencia-item { border: 1px solid #ccc; padding: 6px; margin-bottom: 8px; page-break-inside: avoid; }
     .evidencia-tipo { font-weight: bold; background-color: #f0f4f8; padding: 3px 6px; margin-bottom: 4px; }
     .evidencia-desc { font-size: 9px; color: #555; margin-bottom: 4px; }
-    .evidencia-img { max-width: 100%; max-height: 320px; display: block; margin: 0 auto; }
+    .evidencia-img { width: 200px; display: block; margin: 0 auto; }
 
     .declaracion { border: 1px solid #1e3a5f; padding: 10px 14px; margin-top: 6px; background-color: #f7f9fc; line-height: 1.5; }
     .declaracion p { margin: 4px 0; }
@@ -127,8 +127,8 @@
       {% if ev.descripcion %}
       <div class="evidencia-desc">{{ ev.descripcion }}</div>
       {% endif %}
-      {% if ev.imagen_b64 %}
-      <img class="evidencia-img" src="{{ ev.imagen_b64 }}" />
+      {% if ev.imagen_path %}
+      <img class="evidencia-img" src="{{ ev.imagen_path }}" />
       {% else %}
       <div style="font-size:9px; color:#b00020;">Imagen no disponible</div>
       {% endif %}
