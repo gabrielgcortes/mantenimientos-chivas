@@ -12,7 +12,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from django.contrib.auth import get_user_model
-from equipos.models import Equipo
+from equipos.models import Departamento, Equipo, Ubicacion
 from mantenimientos.models import Mantenimiento, ChecklistItem, ChecklistRespuesta, Firma
 
 Tecnico = get_user_model()
@@ -23,6 +23,8 @@ Firma.objects.all().delete()
 ChecklistRespuesta.objects.all().delete()
 Mantenimiento.objects.all().delete()
 Equipo.objects.all().delete()
+Departamento.objects.all().delete()
+Ubicacion.objects.all().delete()
 ChecklistItem.objects.all().delete()
 
 # ─── CATÁLOGO DE CHECKLIST ────────────────────────────────────────
@@ -56,15 +58,47 @@ print(f"   ✓ {len(checklist_items)} items de checklist creados")
 # ─── EQUIPOS ───────────────────────────────────────────────────────
 print("\n💻 Creando equipos...")
 
-ubicaciones = [
-    'Oficinas Verde Valle - Piso 2',
-    'Oficinas Verde Valle - Piso 3',
-    'Estadio Akron - Área administrativa',
-    'Estadio Akron - Sala de prensa',
-    'Centro de Alto Rendimiento',
-    'Tienda oficial Guadalajara',
-    'Academia Chivas - Dirección',
-]
+# ─── CATÁLOGO DE UBICACIONES Y DEPARTAMENTOS ──────────────────────
+# Cada ubicación tiene su propia lista de departamentos (relación 1→N).
+# Esto modela la realidad de Chivas: el "RRHH" del Estadio es una entidad
+# distinta al "RRHH" de Verde Valle aunque compartan nombre.
+print("\n🏢 Creando ubicaciones y departamentos...")
+
+ubicaciones_estructura = {
+    'Oficinas Verde Valle': [
+        'Dirección General', 'Recursos Humanos', 'Finanzas', 'Marketing',
+        'Tecnología e Innovación', 'Comunicación', 'Legal',
+    ],
+    'Estadio Akron': [
+        'Operaciones de Estadio', 'Seguridad', 'Sala de Prensa',
+        'Ticketing', 'Mantenimiento', 'Capital Humano',
+    ],
+    'Centro de Alto Rendimiento (CAR)': [
+        'Cuerpo Técnico', 'Médico y Fisioterapia', 'Análisis de Video',
+        'Nutrición', 'Administración Deportiva',
+    ],
+    'Academia Chivas': [
+        'Dirección Deportiva', 'Cuerpo Técnico Fuerzas Básicas',
+        'Médico Juvenil', 'Operaciones',
+    ],
+    'Tienda Oficial Guadalajara': [
+        'Ventas', 'Inventario', 'Atención a Clientes',
+    ],
+    'Gigantera': [
+        'Operaciones', 'Mantenimiento', 'Eventos',
+    ],
+}
+
+ubicaciones_objs = {}
+departamentos_objs = []  # lista de Departamento ya guardados
+for nombre_ubic, deptos in ubicaciones_estructura.items():
+    ubic = Ubicacion.objects.create(nombre=nombre_ubic)
+    ubicaciones_objs[nombre_ubic] = ubic
+    for nombre_depto in deptos:
+        d = Departamento.objects.create(nombre=nombre_depto, ubicacion=ubic)
+        departamentos_objs.append(d)
+
+print(f"   ✓ {len(ubicaciones_objs)} ubicaciones, {len(departamentos_objs)} departamentos creados")
 
 colaboradores = [
     ('Juan Pérez García', 'juan.perez@chivas.mx', 'Director de Tecnología'),
@@ -126,8 +160,10 @@ equipos_data = [
 equipos = []
 for i, eq_data in enumerate(equipos_data):
     colab = colaboradores[i % len(colaboradores)]
-    ubicacion = ubicaciones[i % len(ubicaciones)]
-    
+    # Distribuimos equipos por ubicación-departamento de forma cíclica.
+    departamento = departamentos_objs[i % len(departamentos_objs)]
+    ubicacion = departamento.ubicacion
+
     # Fecha de último mantenimiento: entre 1 y 180 días atrás
     dias_atras = randint(1, 180)
     fecha_ultimo = date.today() - timedelta(days=dias_atras)
@@ -146,6 +182,7 @@ for i, eq_data in enumerate(equipos_data):
         modelo=eq_data['modelo'],
         numero_serie=eq_data['serie'],
         ubicacion=ubicacion,
+        departamento=departamento,
         colaborador_nombre=colab[0],
         colaborador_correo=colab[1],
         colaborador_puesto=colab[2],
@@ -184,13 +221,6 @@ print(f"   ✓ {len(tecnicos)} técnicos creados (password: tecnico123)")
 # ─── MANTENIMIENTOS ────────────────────────────────────────────────
 print("\n🔧 Creando mantenimientos...")
 
-departamentos = [
-    'Tecnología e Innovación',
-    'Sistemas y Redes',
-    'Soporte Técnico',
-    'Infraestructura TI',
-]
-
 mantenimientos = []
 equipos_activos = [e for e in equipos if e.activo]
 
@@ -208,7 +238,9 @@ for equipo in equipos_activos[:15]:  # Solo primeros 15 para no saturar
         estatus = 'BORRADOR' if (es_ultimo and randint(1, 10) == 1) else 'COMPLETADO'
         
         tecnico = choice(tecnicos)
-        depto = choice(departamentos)
+        # El departamento_area en el mantenimiento se hereda del equipo
+        # (representa una "snapshot" en el momento del servicio).
+        depto = equipo.departamento.nombre if equipo.departamento_id else ''
         
         actividades = choice([
             'Limpieza física del equipo, actualización de sistema operativo, verificación de hardware.',

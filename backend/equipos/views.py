@@ -7,12 +7,37 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from .csv_io import CSVImportError, export_equipos_csv, import_equipos_csv
-from .models import Equipo
-from .serializers import EquipoBajaSerializer, EquipoDetailSerializer, EquipoListSerializer
+from .models import Departamento, Equipo, Ubicacion
+from .serializers import (
+    DepartamentoSerializer,
+    EquipoBajaSerializer,
+    EquipoDetailSerializer,
+    EquipoListSerializer,
+    UbicacionSerializer,
+)
+
+
+class UbicacionViewSet(viewsets.ModelViewSet):
+    queryset = Ubicacion.objects.all()
+    serializer_class = UbicacionSerializer
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+
+class DepartamentoViewSet(viewsets.ModelViewSet):
+    queryset = Departamento.objects.select_related('ubicacion').all()
+    serializer_class = DepartamentoSerializer
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ubicacion = self.request.query_params.get('ubicacion')
+        if ubicacion:
+            qs = qs.filter(ubicacion_id=ubicacion)
+        return qs
 
 
 class EquipoViewSet(viewsets.ModelViewSet):
-    queryset = Equipo.objects.all()
+    queryset = Equipo.objects.select_related('ubicacion', 'departamento').all()
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_serializer_class(self):

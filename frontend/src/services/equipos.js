@@ -1,5 +1,19 @@
 import client from '../api/client';
 
+export const ubicacionesService = {
+  list: () => client.get('/ubicaciones/').then(r => (r.data.results ?? r.data)),
+  create: (nombre) => client.post('/ubicaciones/', { nombre }).then(r => r.data),
+};
+
+export const departamentosService = {
+  list: (ubicacionId) => {
+    const params = ubicacionId ? { ubicacion: ubicacionId } : {};
+    return client.get('/departamentos/', { params }).then(r => (r.data.results ?? r.data));
+  },
+  create: (nombre, ubicacion) =>
+    client.post('/departamentos/', { nombre, ubicacion }).then(r => r.data),
+};
+
 export const equiposService = {
   list: (params = {}) => client.get('/equipos/', { params }).then(r => r.data),
   get: (id) => client.get(`/equipos/${id}/`).then(r => r.data),

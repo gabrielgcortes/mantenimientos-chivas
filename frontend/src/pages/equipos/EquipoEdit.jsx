@@ -7,7 +7,8 @@ import EquipoForm from '../../components/equipos/EquipoForm';
 import { equiposService } from '../../services/equipos';
 
 const EDITABLE_FIELDS = [
-  'marca', 'modelo', 'numero_serie', 'tipo_equipo', 'ubicacion',
+  'marca', 'modelo', 'numero_serie', 'tipo_equipo',
+  'ubicacion', 'departamento',
   'colaborador_nombre', 'colaborador_correo', 'colaborador_puesto',
   'fecha_proximo_mantenimiento',
 ];
@@ -43,7 +44,11 @@ export default function EquipoEdit() {
     setSaving(true);
     setApiError('');
     try {
-      await equiposService.update(id, values);
+      const payload = {
+        ...values,
+        departamento: values.departamento === '' ? null : values.departamento,
+      };
+      await equiposService.update(id, payload);
       navigate(`/equipos/${id}`);
     } catch (e) {
       setApiError(e.message);

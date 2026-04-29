@@ -10,13 +10,17 @@ import io
 from django.db import transaction
 from django.http import HttpResponse
 
-from .models import Equipo
+from .models import Departamento, Equipo, Ubicacion
 from .serializers import EquipoDetailSerializer
 
 
 # Encabezados del CSV en orden de exportación.
 # Los primeros son los campos editables (los mismos que acepta el serializer);
 # los últimos son metadatos informativos (no se usan en import).
+#
+# `ubicacion` y `departamento` se manejan por NOMBRE: si no existen, se crean
+# automáticamente al importar. Esto permite a los usuarios trabajar el CSV en
+# Excel sin tener que conocer los IDs internos.
 CSV_HEADERS_IMPORT = [
     'codigo_interno',
     'marca',
@@ -24,6 +28,7 @@ CSV_HEADERS_IMPORT = [
     'numero_serie',
     'tipo_equipo',
     'ubicacion',
+    'departamento',
     'colaborador_nombre',
     'colaborador_correo',
     'colaborador_puesto',
@@ -71,7 +76,8 @@ def export_equipos_csv(queryset, filename='equipos.csv'):
             eq.modelo,
             eq.numero_serie,
             eq.tipo_equipo,
-            eq.ubicacion,
+            eq.ubicacion.nombre if eq.ubicacion_id else '',
+            eq.departamento.nombre if eq.departamento_id else '',
             eq.colaborador_nombre,
             eq.colaborador_correo,
             eq.colaborador_puesto,
@@ -97,6 +103,7 @@ class CSVImportError(Exception):
         self.mensaje = mensaje
 
 
+@transaction.atomic
 def import_equipos_csv(archivo, sync_estado=None):
     """Importa equipos desde un archivo CSV.
 
@@ -109,6 +116,10 @@ def import_equipos_csv(archivo, sync_estado=None):
 
     Si hay errores, NO se crea ningún equipo (transacción atómica revertida)
     y `creados` será 0. La respuesta incluye el detalle por fila.
+
+    Toda la operación corre dentro de una transacción atómica: si hay errores
+    de fila, también se revierten las Ubicaciones/Departamentos creados
+    implícitamente al resolver los nombres del CSV.
 
     Lanza `CSVImportError` para errores que impiden procesar el archivo.
     """
@@ -143,6 +154,11 @@ def import_equipos_csv(archivo, sync_estado=None):
     filas_ok = []  # lista de (numero_fila, serializer_listo_para_save)
     codigos_vistos = {}  # codigo -> numero_fila (para detectar duplicados internos)
 
+    # Caches en memoria para evitar consultar/crear múltiples veces.
+    # Las claves son los nombres tal cual vienen del CSV (después de strip).
+    ubicaciones_cache = {}      # nombre -> Ubicacion
+    departamentos_cache = {}    # (nombre_dept, ubicacion_nombre) -> Departamento
+
     for idx, raw_row in enumerate(reader, start=2):  # fila 1 = encabezados
         # Normaliza claves (espacios) y valores (strip).
         row = {
@@ -161,6 +177,40 @@ def import_equipos_csv(archivo, sync_estado=None):
         # Fechas vacías → None (el serializer las trata como null).
         if not data.get('fecha_proximo_mantenimiento'):
             data['fecha_proximo_mantenimiento'] = None
+
+        # ── Resolver Ubicación y Departamento por nombre ────────────────
+        # El CSV trae strings; el serializer espera IDs (FK). Creamos las
+        # entidades de catálogo si no existen aún.
+        ubicacion_nombre = (data.pop('ubicacion', '') or '').strip()
+        depto_nombre = (data.pop('departamento', '') or '').strip()
+
+        ubicacion = None
+        if ubicacion_nombre:
+            ubicacion = ubicaciones_cache.get(ubicacion_nombre)
+            if ubicacion is None:
+                ubicacion, _ = Ubicacion.objects.get_or_create(nombre=ubicacion_nombre)
+                ubicaciones_cache[ubicacion_nombre] = ubicacion
+            data['ubicacion'] = ubicacion.id
+
+        if depto_nombre:
+            if not ubicacion:
+                errores.append({
+                    'fila': idx,
+                    'errores': {
+                        'departamento': [
+                            'No se puede asignar departamento sin ubicación.'
+                        ]
+                    },
+                })
+                continue
+            cache_key = (depto_nombre, ubicacion_nombre)
+            depto = departamentos_cache.get(cache_key)
+            if depto is None:
+                depto, _ = Departamento.objects.get_or_create(
+                    nombre=depto_nombre, ubicacion=ubicacion
+                )
+                departamentos_cache[cache_key] = depto
+            data['departamento'] = depto.id
 
         # Detectar duplicados dentro del propio archivo.
         codigo = data.get('codigo_interno', '')
@@ -187,7 +237,10 @@ def import_equipos_csv(archivo, sync_estado=None):
             errores.append({'fila': idx, 'errores': ser.errors})
 
     # --- Si hay errores, abortamos sin guardar nada --------------------
+    # IMPORTANTE: forzamos rollback de la transacción para revertir también
+    # las Ubicaciones/Departamentos creadas implícitamente al resolver nombres.
     if errores:
+        transaction.set_rollback(True)
         return {
             'creados': 0,
             'fallidos': len(errores),
@@ -198,12 +251,11 @@ def import_equipos_csv(archivo, sync_estado=None):
         raise CSVImportError('El archivo no contiene filas con datos.')
 
     # --- Guardado atómico ----------------------------------------------
-    with transaction.atomic():
-        for _, ser in filas_ok:
-            equipo = ser.save()
-            if sync_estado:
-                sync_estado(equipo)
-                equipo.save(update_fields=['estado', 'activo'])
+    for _, ser in filas_ok:
+        equipo = ser.save()
+        if sync_estado:
+            sync_estado(equipo)
+            equipo.save(update_fields=['estado', 'activo'])
 
     return {
         'creados': len(filas_ok),

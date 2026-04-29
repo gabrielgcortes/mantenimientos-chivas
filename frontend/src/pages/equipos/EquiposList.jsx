@@ -85,7 +85,8 @@ export default function EquiposList() {
           e.marca.toLowerCase().includes(search.toLowerCase()) ||
           e.modelo.toLowerCase().includes(search.toLowerCase()) ||
           (e.colaborador_nombre || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.ubicacion || '').toLowerCase().includes(search.toLowerCase())
+          (e.ubicacion_nombre || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.departamento_nombre || '').toLowerCase().includes(search.toLowerCase())
       )
     : equipos;
 
@@ -225,7 +226,14 @@ export default function EquiposList() {
                       {TIPO_EQUIPO_MAP[eq.tipo_equipo] ?? eq.tipo_equipo}
                     </Typography>
                   </TableCell>
-                  <TableCell><Typography variant="body2">{eq.ubicacion}</Typography></TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{eq.ubicacion_nombre || '—'}</Typography>
+                    {eq.departamento_nombre && (
+                      <Typography variant="caption" color="text.secondary">
+                        {eq.departamento_nombre}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Typography variant="body2" color={eq.colaborador_nombre ? 'text.primary' : 'text.disabled'}>
                       {eq.colaborador_nombre || 'Sin asignar'}

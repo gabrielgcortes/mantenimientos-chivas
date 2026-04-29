@@ -120,7 +120,8 @@ export default function EquipoDetail() {
             <InfoRow label="Modelo" value={equipo.modelo} />
             <InfoRow label="Número de serie" value={equipo.numero_serie} />
             <InfoRow label="Tipo" value={TIPO_EQUIPO_MAP[equipo.tipo_equipo] ?? equipo.tipo_equipo} />
-            <InfoRow label="Ubicación" value={equipo.ubicacion} />
+            <InfoRow label="Ubicación" value={equipo.ubicacion_nombre} />
+            <InfoRow label="Departamento" value={equipo.departamento_nombre} />
             <Divider sx={{ my: 0.5 }} />
             <InfoRow label="Colaborador" value={equipo.colaborador_nombre} />
             <InfoRow label="Correo" value={equipo.colaborador_correo} />

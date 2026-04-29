@@ -175,6 +175,22 @@ export default function MantenimientoEdit() {
     if (!equipos.length || !form.equipo) { setSelectedEquipo(null); return; }
     const eq = equipos.find((e) => String(e.id) === String(form.equipo));
     setSelectedEquipo(eq || null);
+
+    // Pre-llenar departamento_area y responsable_area desde el equipo si están
+    // vacíos (override-able por el técnico). Solo aplica al primer "encuentro"
+    // con el equipo: si el usuario los modifica, no los sobreescribimos.
+    if (eq) {
+      setForm((prev) => {
+        const updates = {};
+        if (!prev.departamento_area && eq.departamento_nombre) {
+          updates.departamento_area = eq.departamento_nombre;
+        }
+        if (!prev.responsable_area && eq.colaborador_nombre) {
+          updates.responsable_area = eq.colaborador_nombre;
+        }
+        return Object.keys(updates).length ? { ...prev, ...updates } : prev;
+      });
+    }
   }, [form.equipo, equipos]);
 
   const handleField = (name, value) => {
@@ -475,7 +491,11 @@ export default function MantenimientoEdit() {
             </TextField>
             {selectedEquipo && (
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                {selectedEquipo.colaborador_nombre} · {selectedEquipo.ubicacion}
+                {[
+                  selectedEquipo.colaborador_nombre,
+                  selectedEquipo.ubicacion_nombre,
+                  selectedEquipo.departamento_nombre,
+                ].filter(Boolean).join(' · ')}
               </Typography>
             )}
           </Grid>
@@ -496,7 +516,15 @@ export default function MantenimientoEdit() {
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <TextField label="Departamento / Área" {...f('departamento_area')} />
+            <TextField
+              label="Departamento / Área"
+              {...f('departamento_area')}
+              helperText={
+                fieldErrors.departamento_area
+                  ? 'Obligatorio'
+                  : 'Pre-llenado desde el equipo. Puede modificarse si el servicio se hizo en otra área.'
+              }
+            />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <TextField label="Responsable del área" {...f('responsable_area')} />

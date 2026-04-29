@@ -13,6 +13,7 @@ const INITIAL = {
   numero_serie: '',
   tipo_equipo: '',
   ubicacion: '',
+  departamento: '',
   colaborador_nombre: '',
   colaborador_correo: '',
   colaborador_puesto: '',
@@ -47,7 +48,12 @@ export default function EquipoNew() {
     setSaving(true);
     setApiError('');
     try {
-      const equipo = await equiposService.create(values);
+      // Strings vacíos en FKs -> null para que DRF no truene en validación.
+      const payload = {
+        ...values,
+        departamento: values.departamento === '' ? null : values.departamento,
+      };
+      const equipo = await equiposService.create(payload);
       navigate(`/equipos/${equipo.id}`);
     } catch (e) {
       setApiError(e.message);
