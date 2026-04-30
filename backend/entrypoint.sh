@@ -114,4 +114,43 @@ else:
     print(f'✓ {MaterialCatalogo.objects.count()} materiales ya existen')
 "
 
+echo "Verificando ubicaciones y departamentos..."
+python manage.py shell -c "
+from equipos.models import Ubicacion, Departamento
+if Ubicacion.objects.count() == 0:
+    estructura = {
+        'Oficinas Verde Valle': [
+            'Dirección General', 'Recursos Humanos', 'Finanzas', 'Marketing',
+            'Tecnología e Innovación', 'Comunicación', 'Legal',
+        ],
+        'Estadio Akron': [
+            'Operaciones de Estadio', 'Seguridad', 'Sala de Prensa',
+            'Ticketing', 'Mantenimiento', 'Capital Humano',
+        ],
+        'Centro de Alto Rendimiento (CAR)': [
+            'Cuerpo Técnico', 'Médico y Fisioterapia', 'Análisis de Video',
+            'Nutrición', 'Administración Deportiva',
+        ],
+        'Academia Chivas': [
+            'Dirección Deportiva', 'Cuerpo Técnico Fuerzas Básicas',
+            'Médico Juvenil', 'Operaciones',
+        ],
+        'Tienda Oficial Guadalajara': [
+            'Ventas', 'Inventario', 'Atención a Clientes',
+        ],
+        'Gigantera': [
+            'Operaciones', 'Mantenimiento', 'Eventos',
+        ],
+    }
+    total_deptos = 0
+    for nombre_ubic, deptos in estructura.items():
+        ubic = Ubicacion.objects.create(nombre=nombre_ubic)
+        for nombre_depto in deptos:
+            Departamento.objects.create(nombre=nombre_depto, ubicacion=ubic)
+            total_deptos += 1
+    print(f'✓ {Ubicacion.objects.count()} ubicaciones y {total_deptos} departamentos creados automáticamente')
+else:
+    print(f'✓ {Ubicacion.objects.count()} ubicaciones y {Departamento.objects.count()} departamentos ya existen')
+"
+
 exec "$@"
