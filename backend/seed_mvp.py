@@ -8,7 +8,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from mantenimientos.models import ChecklistItem, ChecklistRespuesta, Mantenimiento
-from equipos.models import Equipo
+from equipos.models import Equipo, Ubicacion
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -21,7 +21,7 @@ existing_codes = set(Equipo.objects.values_list('codigo_interno', flat=True))
 print(f"Equipos existentes: {Equipo.objects.count()} — se respetan")
 print(f"Mantenimientos existentes: {Mantenimiento.objects.count()} — se respetan")
 
-ubicaciones = [
+_ubicacion_nombres = [
     'Oficinas Verde Valle - Piso 2',
     'Oficinas Verde Valle - Piso 3',
     'Estadio Akron - Área Administrativa',
@@ -29,6 +29,7 @@ ubicaciones = [
     'Tienda Oficial Guadalajara',
     'Academia Chivas - Dirección',
 ]
+ubicaciones = [Ubicacion.objects.get_or_create(nombre=n)[0] for n in _ubicacion_nombres]
 
 colaboradores = [
     ('Carlos Ramírez Torres',    'carlos.ramirez@chivas.mx',    'Gerente de Operaciones'),
@@ -83,9 +84,9 @@ equipos_data = [
     ('CHV-DES-0002', 'desktop',   'HP',      'EliteDesk 800 G8',       'EDS800-SN-001'),
     ('CHV-DES-0003', 'desktop',   'Lenovo',  'ThinkCentre M90q',       'TC-M90Q-001'),
     ('CHV-DES-0004', 'desktop',   'Dell',    'OptiPlex 5090',          'OPT5090-SN-001'),
-    ('CHV-SRV-0001', 'servidor',  'Dell',    'PowerEdge R750',         'PE-R750-SN-001'),
-    ('CHV-SRV-0002', 'servidor',  'HP',      'ProLiant DL380 Gen10',   'PL-DL380-001'),
-    ('CHV-SRV-0003', 'servidor',  'Lenovo',  'ThinkSystem SR650',      'SR650-SN-001'),
+    ('CHV-SRV-0001', 'SERVIDOR',  'Dell',    'PowerEdge R750',         'PE-R750-SN-001'),
+    ('CHV-SRV-0002', 'SERVIDOR',  'HP',      'ProLiant DL380 Gen10',   'PL-DL380-001'),
+    ('CHV-SRV-0003', 'SERVIDOR',  'Lenovo',  'ThinkSystem SR650',      'SR650-SN-001'),
     ('CHV-IMP-0001', 'impresora', 'HP',      'LaserJet Pro M404dn',    'LJ-M404-SN-001'),
     ('CHV-IMP-0002', 'impresora', 'Epson',   'EcoTank L3250',          'ET-L3250-SN-001'),
     ('CHV-IMP-0003', 'impresora', 'Canon',   'imageRUNNER 1643i',      'IR1643-SN-001'),
@@ -95,8 +96,8 @@ equipos_data = [
     ('CHV-MON-0001', 'monitor',   'Dell',    'UltraSharp U2722D',      'U2722D-SN-001'),
     ('CHV-MON-0002', 'monitor',   'LG',      '27UK850-W',              'LG27-SN-001'),
     ('CHV-MON-0003', 'monitor',   'Samsung', 'Odyssey G5 27"',         'OG5-SN-001'),
-    ('CHV-TAB-0001', 'tablet',    'Apple',   'iPad Pro 12.9"',         'IPAD-SN-001'),
-    ('CHV-TAB-0002', 'tablet',    'Samsung', 'Galaxy Tab S8',          'GTABS8-SN-001'),
+    ('CHV-TAB-0001', 'OTRO',    'Apple',   'iPad Pro 12.9"',         'IPAD-SN-001'),
+    ('CHV-TAB-0002', 'OTRO',    'Samsung', 'Galaxy Tab S8',          'GTABS8-SN-001'),
 ]
 
 # Solo agregar los que no existen
@@ -113,7 +114,7 @@ for i, (codigo, tipo, marca, modelo, serie) in enumerate(nuevos):
     estado_eq = 'ACTIVO' if activo else 'BAJA'
     equipos_bulk.append(Equipo(
         codigo_interno=codigo,
-        tipo_equipo=tipo.upper(),
+        tipo_equipo=tipo if tipo == tipo.upper() else tipo.upper(),
         marca=marca,
         modelo=modelo,
         numero_serie=serie,
