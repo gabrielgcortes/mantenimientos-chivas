@@ -30,7 +30,9 @@ RUN pip install --no-cache-dir --retries 10 --timeout 120 -r requirements.txt
 COPY . .
 
 # Crear directorios necesarios si no existen
-RUN mkdir -p /app/mantenimientos/migrations
+# staticfiles y media se crean explícitamente para que Docker los inicialice
+# con ownership correcto al montar los named volumes por primera vez.
+RUN mkdir -p /app/staticfiles /app/media /app/mantenimientos/migrations
 
 # Establecer los permisos adecuados para todo el directorio de la aplicación
 RUN chown -R appuser:appuser /app
