@@ -57,6 +57,8 @@ jobs:
       #    empiece a aceptar conexiones.
       - name: Wait for services to be ready
         run: |
+          # ── Frontend (nginx) ─────────────────────────────────────────
+          # Suele estar listo en pocos segundos.
           echo "⏳ Esperando a que el frontend responda en http://localhost:8081 ..."
           for i in $(seq 1 30); do
             if curl -fsS -o /dev/null http://localhost:8081/; then
@@ -65,19 +67,48 @@ jobs:
             fi
             if [ "$i" = "30" ]; then
               echo "❌ Frontend no respondió tras 90s"
+              docker compose logs --tail=100 frontend || true
               exit 1
             fi
             sleep 3
           done
 
-          echo "⏳ Esperando a que el backend (vía proxy nginx) responda en /admin/login/ ..."
-          for i in $(seq 1 30); do
-            if curl -fsS -o /dev/null http://localhost:8081/admin/login/; then
-              echo "✅ Backend respondió correctamente (intento $i)"
+          # ── Backend (vía proxy nginx) ────────────────────────────────
+          # El entrypoint.sh corre: wait_db + makemigrations + migrate +
+          # collectstatic + 5 invocaciones de `manage.py shell -c` para seeds.
+          # En el runner de GitHub esto puede tardar 60-120s. Damos hasta 180s.
+          echo "⏳ Esperando a que el backend responda en /admin/login/ (timeout 180s) ..."
+          MAX_ATTEMPTS=60
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/admin/login/ || echo "000")
+
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Backend respondió 200 (intento $i / $MAX_ATTEMPTS)"
               break
             fi
-            if [ "$i" = "30" ]; then
-              echo "❌ Backend no respondió tras 90s"
+
+            # Falla rápida: si el contenedor backend murió, no tiene sentido seguir.
+            BACKEND_STATE=$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -q backend)" 2>/dev/null || echo "missing")
+            if [ "$BACKEND_STATE" = "exited" ] || [ "$BACKEND_STATE" = "missing" ]; then
+              echo "❌ El contenedor backend está en estado: $BACKEND_STATE"
+              echo "── Últimos 200 logs del backend ──"
+              docker compose logs --tail=200 backend || true
+              exit 1
+            fi
+
+            # Cada 10 intentos (~30s) imprime progreso para depurar en CI.
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "  ... intento $i/$MAX_ATTEMPTS  HTTP=$STATUS  backend=$BACKEND_STATE"
+              echo "  ── últimos 20 logs del backend ──"
+              docker compose logs --tail=20 backend || true
+            fi
+
+            if [ "$i" = "$MAX_ATTEMPTS" ]; then
+              echo "❌ Backend no respondió 200 tras 180s (último HTTP=$STATUS)"
+              echo "── Logs completos del backend ──"
+              docker compose logs --tail=200 backend || true
+              echo "── Logs completos del db ──"
+              docker compose logs --tail=50 db || true
               exit 1
             fi
             sleep 3
