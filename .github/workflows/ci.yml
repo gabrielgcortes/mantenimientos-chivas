@@ -1,0 +1,144 @@
+name: CI - Build & Smoke Test
+
+# Se dispara en pushes y PRs hacia las ramas principales.
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch: # permite correrlo manualmente desde la UI de GitHub
+
+# Cancela ejecuciones previas del mismo branch/PR si llega un nuevo commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke-test:
+    name: Build images & smoke test stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # 1) Trae el código del repo al runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2) Docker y Docker Compose v2 ya vienen preinstalados en ubuntu-latest.
+      #    Solo verificamos versiones para dejar evidencia en los logs.
+      - name: Show Docker & Compose versions
+        run: |
+          docker --version
+          docker compose version
+
+      # 3) Configura Buildx (mejor cache y builds multi-stage más eficientes).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 4) Crea el archivo .env que docker-compose espera, copiando del .env.ci.
+      #    NO se usan secretos reales: todas las credenciales son dummy.
+      - name: Prepare .env for CI
+        run: |
+          cp .env.ci .env
+          echo "✅ .env creado desde .env.ci"
+
+      # 5) Construye todas las imágenes definidas en docker-compose.yml.
+      #    Falla el job si alguna imagen no compila.
+      - name: Build Docker images
+        run: docker compose build --pull
+
+      # 6) Levanta el stack en segundo plano (-d) sin reconstruir.
+      - name: Start services
+        run: docker compose up -d
+
+      # 7) Espera hasta que los servicios respondan o falla tras 90s.
+      #    NOTA: el backend corre migraciones automáticamente en su entrypoint.sh,
+      #    por eso aquí solo esperamos a que ese proceso termine y gunicorn
+      #    empiece a aceptar conexiones.
+      - name: Wait for services to be ready
+        run: |
+          echo "⏳ Esperando a que el frontend responda en http://localhost:8081 ..."
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://localhost:8081/; then
+              echo "✅ Frontend listo (intento $i)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "❌ Frontend no respondió tras 90s"
+              exit 1
+            fi
+            sleep 3
+          done
+
+          echo "⏳ Esperando a que el backend (vía proxy nginx) responda en /admin/login/ ..."
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://localhost:8081/admin/login/; then
+              echo "✅ Backend respondió correctamente (intento $i)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "❌ Backend no respondió tras 90s"
+              exit 1
+            fi
+            sleep 3
+          done
+
+      # 8) Inspección del estado de los contenedores: deja evidencia en logs.
+      - name: Inspect running containers
+        run: |
+          echo "── docker compose ps ─────────────────────────────"
+          docker compose ps
+          echo ""
+          echo "── docker ps ─────────────────────────────────────"
+          docker ps -a
+
+      # 9) Smoke tests HTTP contra los endpoints expuestos.
+      #    Cualquier respuesta != 2xx/3xx hace fallar el job.
+      - name: HTTP smoke tests
+        run: |
+          set -e
+          echo "🧪 GET /  (frontend SPA)"
+          curl -fsS -o /dev/null -w "  HTTP %{http_code}\n" http://localhost:8081/
+
+          echo "🧪 GET /admin/login/  (Django admin vía proxy)"
+          curl -fsS -o /dev/null -w "  HTTP %{http_code}\n" http://localhost:8081/admin/login/
+
+          echo "🧪 GET /api/  (DRF root — esperamos 401/404, NO 5xx)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/api/)
+          echo "  HTTP $STATUS"
+          if [ "$STATUS" -ge 500 ]; then
+            echo "❌ Backend devolvió error 5xx"
+            exit 1
+          fi
+
+      # 10) Valida que ningún contenedor haya salido con código != 0.
+      - name: Verify no container has exited unexpectedly
+        run: |
+          EXITED=$(docker compose ps --status=exited --quiet)
+          if [ -n "$EXITED" ]; then
+            echo "❌ Hay contenedores que se detuvieron inesperadamente:"
+            docker compose ps -a
+            exit 1
+          fi
+          echo "✅ Todos los contenedores siguen corriendo"
+
+      # 11) Si CUALQUIER paso anterior falló, vuelca logs de todos los servicios.
+      #     `if: failure()` garantiza que solo se ejecute en errores.
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          echo "════════════════════════════════════════════════════"
+          echo "  LOGS COMPLETOS DEL STACK (solo se imprimen en fallo)"
+          echo "════════════════════════════════════════════════════"
+          docker compose logs --no-color --tail=200 || true
+          echo ""
+          echo "── docker compose ps ─────────────────────────────"
+          docker compose ps -a || true
+
+      # 12) Siempre limpia: para contenedores, redes y volúmenes.
+      #     `if: always()` corre aunque haya fallos previos.
+      - name: Tear down stack
+        if: always()
+        run: |
+          docker compose down -v --remove-orphans
+          rm -f .env
